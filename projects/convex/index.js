@@ -45,24 +45,29 @@ async function tvl(timestamp, block) {
       abi: abi.poolInfo,
       params: [i]
     })
+    console.log('pool---', pool);
     const tokenSupply = await sdk.api.erc20.totalSupply({
       target: pool.output.token,
       block
     })
+    console.log('tokenSupply---', tokenSupply);
     const lpTokenSupply = sdk.api.erc20.totalSupply({
       target: pool.output.lptoken,
       block
     })
     const poolData = curvePools.find(crvPool => crvPool.addresses.lpToken.toLowerCase() === pool.output.lptoken.toLowerCase())
-    if(poolData === undefined){
+    if (poolData === undefined) {
       console.log(pool.output.lptoken);
       return;
     }
     const swapAddress = poolData.addresses.swap
-    const coinCalls = [...Array(Number(poolData.coins.length)).keys()].map(num => ({
-      target: swapAddress,
-      params: [num]
-    }));
+    const coinCalls = [...Array(Number(poolData.coins.length)).keys()].map(num => {
+      console.log("num---",num)
+      return {
+        target: swapAddress,
+        params: [num]
+      }
+    });
     const coinsUint = sdk.api.abi.multiCall({
       abi: abi.coinsUint,
       calls: coinCalls,
@@ -74,18 +79,18 @@ async function tvl(timestamp, block) {
       block
     })
     let coins = await coinsUint
-    if(!coins.output[0].success){
+    if (!coins.output[0].success) {
       coins = await coinsInt
     }
     const coinBalances = await sdk.api.abi.multiCall({
       abi: 'erc20:balanceOf',
-      calls: coins.output.map(coin=>({
+      calls: coins.output.map(coin => ({
         target: coin.output,
         params: [swapAddress]
       }))
     })
-    if(poolData.name === "ironbank"){
-      const calls = coins.output.map(coinOutput=>({
+    if (poolData.name === "ironbank") {
+      const calls = coins.output.map(coinOutput => ({
         target: coinOutput.output
       }))
       coins = await sdk.api.abi.multiCall({
@@ -98,25 +103,25 @@ async function tvl(timestamp, block) {
         block,
         calls
       })
-      coinBalances.output = coinBalances.output.map((result, i)=>({
+      coinBalances.output = coinBalances.output.map((result, i) => ({
         ...result,
         output: BigNumber(result.output).times(exchangeRate.output[i].output).div(1e18).toFixed(0),
       }))
     }
     const resolvedLPSupply = (await lpTokenSupply).output;
-    await Promise.all(coinBalances.output.map(async (coinBalance, index)=>{
+    await Promise.all(coinBalances.output.map(async (coinBalance, index) => {
       let coinAddress = coins.output[index].output
-      if(replacements.includes(coinAddress)){
+      if (replacements.includes(coinAddress)) {
         coinAddress = "0x6b175474e89094c44da98b954eedeac495271d0f" // dai
       }
-      if(coinBalance.input.target === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"){
+      if (coinBalance.input.target === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
         coinBalance = await sdk.api.eth.getBalance({
           target: coinBalance.input.params[0]
         })
         coinAddress = '0x0000000000000000000000000000000000000000'
       }
       const balance = BigNumber(tokenSupply.output).times(coinBalance.output).div(resolvedLPSupply);
-      if(!balance.isZero()){
+      if (!balance.isZero()) {
         sdk.util.sumSingleBalance(balances, coinAddress, balance.toFixed(0))
       }
     }))
